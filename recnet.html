@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RecNet Rooms Replica</title>
+<style>
+    body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: #0f172a;
+        color: white;
+    }
+
+    header {
+        padding: 15px;
+        background: #111827;
+        font-size: 20px;
+        font-weight: bold;
+    }
+
+    .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 15px;
+        padding: 15px;
+    }
+
+    .card {
+        background: #1f2937;
+        border-radius: 10px;
+        overflow: hidden;
+        transition: 0.2s;
+        cursor: pointer;
+    }
+
+    .card:hover {
+        transform: scale(1.03);
+    }
+
+    .card img {
+        width: 100%;
+        height: 140px;
+        object-fit: cover;
+    }
+
+    .info {
+        padding: 10px;
+    }
+
+    .name {
+        font-size: 16px;
+        font-weight: bold;
+    }
+
+    .meta {
+        font-size: 13px;
+        color: #9ca3af;
+    }
+</style>
+</head>
+<body>
+
+<header>RecNet Rooms (Replica)</header>
+
+<div class="grid" id="rooms"></div>
+
+<script>
+async function loadRooms() {
+    try {
+        const res = await fetch("https://apim.rec.net/api/v1/rooms?take=120");
+        const data = await res.json();
+
+        const container = document.getElementById("rooms");
+        container.innerHTML = "";
+
+        data.forEach(room => {
+            const card = document.createElement("div");
+            card.className = "card";
+
+            const image = room.ImageName 
+                ? `https://img.rec.net/${room.ImageName}` 
+                : "https://via.placeholder.com/300x140?text=No+Image";
+
+            card.innerHTML = `
+                <img src="${image}">
+                <div class="info">
+                    <div class="name">${room.Name || "Unknown Room"}</div>
+                    <div class="meta">
+                        👥 ${room.PlayerCount || 0} / ${room.MaxPlayers || "?"}
+                    </div>
+                </div>
+            `;
+
+            card.onclick = () => {
+                alert("Room ID: " + room.RoomId);
+            };
+
+            container.appendChild(card);
+        });
+
+    } catch (err) {
+        console.error("Failed to load rooms:", err);
+    }
+}
+
+loadRooms();
+</script>
+
+</body>
+</html>
