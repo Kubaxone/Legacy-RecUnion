@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Rec Room Room Viewer</title>
+<style>
+    body {
+        font-family: Arial;
+        background: #0f172a;
+        color: white;
+        padding: 20px;
+    }
+
+    textarea {
+        width: 100%;
+        height: 200px;
+        background: #020617;
+        color: #38bdf8;
+        border: 1px solid #334155;
+        padding: 10px;
+    }
+
+    button {
+        margin-top: 10px;
+        padding: 10px 20px;
+        background: #38bdf8;
+        border: none;
+        cursor: pointer;
+        font-weight: bold;
+    }
+
+    .card {
+        margin-top: 20px;
+        padding: 20px;
+        background: #020617;
+        border: 1px solid #334155;
+        border-radius: 10px;
+    }
+
+    img {
+        max-width: 300px;
+        border-radius: 10px;
+    }
+
+    .stat {
+        margin: 5px 0;
+    }
+</style>
+</head>
+<body>
+
+<h1>🎮 Rec Room Room Viewer</h1>
+
+<textarea id="jsonInput" placeholder="Paste Room JSON here..."></textarea>
+<br>
+<button onclick="loadRoom()">Load Room</button>
+
+<div id="output"></div>
+
+<script>
+function loadRoom() {
+    const input = document.getElementById("jsonInput").value;
+    const output = document.getElementById("output");
+
+    output.innerHTML = "";
+
+    let data;
+    try {
+        data = JSON.parse(input);
+    } catch (e) {
+        output.innerHTML = "<p style='color:red;'>Invalid JSON!</p>";
+        return;
+    }
+
+    const imageUrl = data.ImageName 
+        ? "https://img.rec.net/" + data.ImageName 
+        : "";
+
+    output.innerHTML = `
+        <div class="card">
+            <h2>${data.Name}</h2>
+            <p>${data.Description}</p>
+
+            ${imageUrl ? `<img src="${imageUrl}" onerror="this.style.display='none'">` : ""}
+
+            <h3>📊 Stats</h3>
+            <div class="stat">👥 Visits: ${data.Stats?.VisitCount ?? 0}</div>
+            <div class="stat">⭐ Favorites: ${data.Stats?.FavoriteCount ?? 0}</div>
+            <div class="stat">👏 Cheers: ${data.Stats?.CheerCount ?? 0}</div>
+            <div class="stat">🚪 Visitors: ${data.Stats?.VisitorCount ?? 0}</div>
+
+            <h3>⚙️ Info</h3>
+            <div class="stat">Room ID: ${data.RoomId}</div>
+            <div class="stat">Max Players: ${data.MaxPlayers}</div>
+            <div class="stat">Created: ${new Date(data.CreatedAt).toLocaleString()}</div>
+
+            <h3>🎮 Platforms</h3>
+            <div class="stat">Mobile: ${data.SupportsMobile}</div>
+            <div class="stat">Quest 2: ${data.SupportsQuest2}</div>
+            <div class="stat">VR Low: ${data.SupportsVRLow}</div>
+            <div class="stat">Walk VR: ${data.SupportsWalkVR}</div>
+            <div class="stat">Teleport VR: ${data.SupportsTeleportVR}</div>
+
+            <h3>🔒 Settings</h3>
+            <div class="stat">Cloning Allowed: ${data.CloningAllowed}</div>
+            <div class="stat">Comments Disabled: ${data.DisableRoomComments}</div>
+            <div class="stat">Voice Encrypted: ${data.EncryptVoiceChat}</div>
+        </div>
+    `;
+}
+</script>
+
+</body>
+</html>
