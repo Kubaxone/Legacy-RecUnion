@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Soulbound</title>
+<style>
+  body { background:black; margin:0; overflow:hidden; }
+  canvas { display:block; margin:auto; background:black; image-rendering:pixelated; }
+</style>
+</head>
+<body>
+<canvas id="game" width="640" height="480"></canvas>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+let bossActive = false; // track if Thornberry battle is ongoing
+
+ctx.imageSmoothingEnabled = false;
+
+/* ===== UMBROS SPRITE ===== */
+const umbrosImg = new Image();
+umbrosImg.src = "Umbros.png";
+
+/* ===== GLOOPION SPRITE ===== */
+const gloopImg = new Image();
+gloopImg.src = "Gloop.png";
+
+/* ===== FLUTTERBIT SPRITE ===== */
+const flutterImg = new Image();
+flutterImg.src = "Flutter.png";
+
+/* ===== SPROUTLE SPRITE ===== */
+const plantImg = new Image();
+plantImg.src = "Plant.png";
+
+/* ===== VORTOX SPRITE ===== */
+const vortoxImg = new Image();
+vortoxImg.src = "Vortox.png";
+
+/* ===== VOIDLING SPRITE ===== */
+const voidlingImg = new Image();
+voidlingImg.src = "Voidling.png";
+
+/* ===== BATTLE MUSIC ===== */
+const fightMusic = new Audio("Fight.mp3");
+fightMusic.loop = true;
+fightMusic.volume = 0.5;
+
+/* ===== BOSS MUSIC ===== */
+const bossMusic = new Audio("Berry.mp3");
+bossMusic.loop = true;
+bossMusic.volume = 0.6;
+
+/* ===== STOP ALL MUSIC ===== */
+function stopAllMusic() {
+  fightMusic.pause();
+  fightMusic.currentTime = 0;
+
+  bossMusic.pause();
+  bossMusic.currentTime = 0;
+}
+
+/* ===== SCALE CANVAS FULLSCREEN ===== */
+function scaleCanvas() {
+  const scale = Math.min(window.innerWidth/640, window.innerHeight/480);
+  canvas.style.width = 640*scale + "px";
+  canvas.style.height = 480*scale + "px";
+}
+window.addEventListener("resize", scaleCanvas);
+scaleCanvas();
+
+/* ===== KEYS ===== */
+const keys = {};
+document.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
+document.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
+
+/* ===== GAME STATE ===== */
+let gameState = "menu";
+let menuSelection = 0;
+let currentRoom = 0;
+let dialogue = "";
+let turn = "player";
+let attackTimer = 0;
+let bullets = [];
+let enemy = null;
+let spawnCooldown = 0;
+let bossAttackPattern = "boss";
+let bossAttackChangeTimer = 0;
+let enteredSanctuary = false;
+let thornberryFloat = 0;
+
+/* ===== PLAYER ===== */
+const overworldPlayer = { x:300, y:240, speed:2 };
+const battlePlayer = { hp:20, maxHp:20, heals:3, choice:0 }; 
+const heart = { x:320, y:360, speed:3 };
+
+/* ===== ROOMS ===== */
+const rooms = [
+  { name:"Ruins Entrance", exits:{ right:1 } },
+  { name:"Dark Corridor", exits:{ left:0, right:2 } },
+  { name:"The Deep Chamber", boss:true, defeated:false, exits:{ right:3 } },
+  { name:"Secret Sanctuary", exits:{ left:2, right:4 } },
+  { name:"Maze Room", exits:{ left:3, right:5 } }, // NEW EXIT
+  { name:"Forgotten Shrine", exits:{ left:4 } }    // NEW ROOM
+];
+
+
+/* ===== MAZE DATA ===== */
+const TILE=32;
+const maze = [
+"####################",
+"#........#.........###",
+"#.######.#.######..###",
+"#.#................###",
+"#.#.##################",
+"#.#..............#...#",
+"#.#############.##...#",
+"#.........#..........#",
+"#.################...#",
+"#.................####",
+"###########.##########",
+"#..................###",
+"#################.####",
+"#..................###",
+"######################"
+];
+
+function drawMaze(){
+  for(let y=0;y<maze.length;y++){
+    for(let x=0;x<maze[y].length;x++){
+      if(maze[y][x]==="#"){
+        ctx.fillStyle="#333";
+        ctx.fillRect(x*TILE,y*TILE,TILE,TILE);
+        ctx.strokeStyle="#111";
+        ctx.strokeRect(x*TILE,y*TILE,TILE,TILE);
+      } else {
+        ctx.fillStyle="#000";
+        ctx.fillRect(x*TILE,y*TILE,TILE,TILE);
+      }
+    }
+  }
+}
+
+function mazeCollision(nx, ny){
+  const cx = Math.floor(nx / TILE);
+  const cy = Math.floor(ny / TILE);
+  if(!maze[cy] || maze[cy][cx]==="#") return true;
+  return false;
+}
+
+/* ===== ENEMIES ===== */
+const enemies = {
+  Sproutle:   { name:"Sproutle", hp:12, maxHp:12, color:"#44ff44", attackTime:160, pattern:"fall", dmg:1, canSpare:true },
+  Flutterbit: { name:"Flutterbit", hp:9, maxHp:9, color:"#ffffaa", attackTime:180, pattern:"wave", dmg:1, canSpare:true },
+  Gloopion:   { name:"Gloopion", hp:16, maxHp:16, color:"#aa44ff", attackTime:200, pattern:"drift", dmg:1, canSpare:true },
+  Vortox:     { name:"Vortox", hp:30, maxHp:30, color:"#000080", attackTime:220, pattern:"drift", dmg:1, canSpare:true },
+  Umbros:     { name:"Thornberry", hp:70, maxHp:70, color:"#ff4444", attackTime:260, pattern:"boss", dmg:4, canSpare:false }
+};
+
+/* ===== SECRET SANCTUARY ENEMIES ===== */
+const secretEnemies = {
+  Nightshade: { name:"Nightshade", hp:20, maxHp:20, color:"#993399", attackTime:180, pattern:"drift", dmg:2, canSpare:true },
+  Emberclaw:  { name:"Emberclaw", hp:25, maxHp:25, color:"#ff8800", attackTime:200, pattern:"wave", dmg:3, canSpare:true },
+  Voidling:   { name:"Voidling", hp:30, maxHp:30, color:"#000070", attackTime:220, pattern:"fall", dmg:3, canSpare:true },
+  Frostmaw:   { name:"Frostmaw", hp:35, maxHp:35, color:"#88ccff", attackTime:240, pattern:"drift", dmg:2, canSpare:true }
+};
+const shrineEnemies = {
+  Voidling:   secretEnemies.Voidling,
+  Vortox:     enemies.Vortox,
+  Nightshade: secretEnemies.Nightshade
+};
+
+/* ===== ENEMY DIALOGUE ===== */
+const enemyDialogue = {
+  Sproutle: [
+    "* Sproutle wiggles its leaves nervously.",
+    "* Sproutle smells like fresh soil.",
+    "* Sproutle is soaking up the light."
+  ],
+  Flutterbit: [
+    "* Flutterbit zips around happily.",
+    "* Its wings buzz softly."
+  ],
+  Gloopion: [
+    "* Gloopion bubbles ominously.",
+    "* Jiggle."
+    "*Blurp-Blurb"
+
+  ],  Vortox: [
+    "* Reality bends around Vortox."
+    "* The Air Grows Heavy."
+  ],
+  Nightshade: [
+    "* Nightshade whispers from the dark."
+  ],
+  Emberclaw: [
+    "* Emberclaw crackles with heat."
+  ],
+  Voidling: [
+    "* Voidling stares into nothing."
+    "* Voidling glances at you."
+
+  ],
+  Frostmaw: [
+    "* Frost coats the ground."
+    "* Frost coats the ground."
+  ],
+  Thornberry: [
+    "* Thornberry towers over you.",
+    "* You feel its hatred."
+  ]
+};
+
+function getEnemyDialogue(name){
+  const lines = enemyDialogue[name];
+  if(!lines) return "* ...";
+  return lines[Math.floor(Math.random() * lines.length)];
+}
+
+function startBattle(name, isSecret=false) {
+  stopAllMusic();
+
+  enemy = JSON.parse(JSON.stringify(
+    isSecret ? secretEnemies[name] : enemies[name]
+  ));
+
+  if (enemy.name === "Thornberry") {
+    bossMusic.play();
+  } else {
+    fightMusic.play();
+  }
+
+  enemy.talkCount = 0;  // ensures TALK counter exists
+attackTimer = enemy.attackTime; // make sure enemy turn timer is set
+  gameState = "battle";
+  dialogue = getEnemyDialogue(enemy.name);
+  turn = "player";
+  bullets = [];
+  heart.x = 320;
+  heart.y = 360;
+  battlePlayer.choice = 0;
+
+  if (enemy.name === "Thornberry") {
+    bossAttackPattern = "boss";
+    bossAttackChangeTimer = 0;
+  }
+
+  if (isSecret) {
+    if (enemy.name === "Nightshade") enemy.pattern = "spiral";
+    if (enemy.name === "Emberclaw") enemy.pattern = "zigzag";
+    if (enemy.name === "Voidling") enemy.pattern = "randomBurst";
+    if (enemy.name === "Frostmaw") enemy.pattern = "fall";
+  }
+}
+
+/* ===== MENU ===== */
+function drawMenu() {
+  ctx.fillStyle="black";
+  ctx.fillRect(0,0,640,480);
+  ctx.fillStyle="white";
+  ctx.font="40px monospace";
+  ctx.fillText("SOULBOUND",180,100);
+  const options=["Start Game","Instructions","Exit"];
+  ctx.font="24px monospace";
+  options.forEach((o,i)=>{
+    ctx.fillStyle = menuSelection===i ? "yellow":"white";
+    ctx.fillText(o,260,220+i*40);
+  });
+}
+
+function updateMenu() {
+  if(keys["arrowup"] || keys["w"]){ menuSelection=(menuSelection+2)%3; keys["arrowup"]=false; keys["w"]=false; }
+  if(keys["arrowdown"] || keys["s"]){ menuSelection=(menuSelection+1)%3; keys["arrowdown"]=false; keys["s"]=false; }
+  if(keys.z){
+    if(menuSelection===0) gameState="overworld";
+    if(menuSelection===1) alert("Arrow/WASD to move in overworld.\nIn battle, pick your option with 1: FIGHT, 2: SPARE, 3: HEAL.\nZ = Confirm.");
+    if(menuSelection===2) window.close();
+    keys.z=false;
+  }
+}
+
+/* ===== OVERWORLD ===== */
+function drawFloor() {
+  for(let x=0;x<640;x+=32)
+    for(let y=0;y<480;y+=32){
+      ctx.fillStyle="#222";
+      ctx.fillRect(x,y,32,32);
+      ctx.strokeStyle="#111";
+      ctx.strokeRect(x,y,32,32);
+    }
+}
+
+function drawPlayer() {
+  ctx.fillStyle="red";
+  ctx.fillRect(overworldPlayer.x-6,overworldPlayer.y-6,12,12);
+}
+
+function drawDoor(x,y,t){
+  ctx.strokeStyle="white";
+  ctx.lineWidth=3;
+  ctx.strokeRect(x,y,24,80);
+  ctx.fillStyle="white";
+  ctx.font="14px monospace";
+  ctx.fillText(t,x-5,y-10);
+}
+
+function drawBossSprite(){
+  ctx.fillStyle="#ff4444";
+  ctx.fillRect(260,180,120,120);
+  ctx.fillStyle="white";
+  ctx.fillText("Thornberry",270,170);
+}
+
+function drawOverworld(){
+  if(currentRoom === 4){
+    drawMaze();
+  } else if(currentRoom === 3){
+    for(let x=0;x<640;x+=32)
+      for(let y=0;y<480;y+=32){
+        ctx.fillStyle = ( (x/32 + y/32) % 2 === 0 ) ? "#880088" : "#660066";
+        ctx.fillRect(x,y,32,32);
+        ctx.strokeStyle="#550055";
+        ctx.strokeRect(x,y,32,32);
+      }
+  } else {
+    drawFloor();
+  }
+
+  ctx.fillStyle="white";
+  ctx.font="16px monospace";
+  ctx.fillText(rooms[currentRoom].name,20,30);
+
+  if(rooms[currentRoom].exits?.right) {
+    if(currentRoom !== 2 || rooms[2].defeated) drawDoor(616,200,"→ EXIT");
+  }
+  if(rooms[currentRoom].exits?.left) drawDoor(0,200,"← EXIT");
+
+  if(rooms[currentRoom].boss && !rooms[currentRoom].defeated) drawBossSprite();
+
+  drawPlayer();
+}
+
+function updateOverworld(){
+  let nx = overworldPlayer.x;
+  let ny = overworldPlayer.y;
+
+  if(keys.arrowup || keys.w) ny -= overworldPlayer.speed;
+  if(keys.arrowdown || keys.s) ny += overworldPlayer.speed;
+  if(keys.arrowleft || keys.a) nx -= overworldPlayer.speed;
+  if(keys.arrowright || keys.d) nx += overworldPlayer.speed;
+
+  if(currentRoom === 4){
+    if(!mazeCollision(nx, overworldPlayer.y)) overworldPlayer.x = nx;
+    if(!mazeCollision(overworldPlayer.x, ny)) overworldPlayer.y = ny;
+  } else {
+    overworldPlayer.x=Math.max(20,Math.min(620,nx));
+    overworldPlayer.y=Math.max(60,Math.min(420,ny));
+  }
+
+  if(rooms[currentRoom].exits?.right && overworldPlayer.x>600 && overworldPlayer.y>200 && overworldPlayer.y<280){
+    if(currentRoom !== 2 || rooms[2].defeated){
+      currentRoom=rooms[currentRoom].exits.right; overworldPlayer.x=40;
+      if(currentRoom === 3) enteredSanctuary = true;
+    }
+  }
+  if(rooms[currentRoom].exits?.left && overworldPlayer.x<40 && overworldPlayer.y>200 && overworldPlayer.y<280){
+    currentRoom=rooms[currentRoom].exits.left; overworldPlayer.x=580;
+  }
+
+ // Thornberry boss trigger
+if (currentRoom === 2 && rooms[2].boss && !rooms[2].defeated) {
+    const nearBoss = Math.abs(overworldPlayer.x - 320) < 40 && Math.abs(overworldPlayer.y - 240) < 40;
+    if (nearBoss && !enemy && !bossActive) {
+        bossActive = true; // mark battle as active
+        // start battle on next tick to prevent freeze
+        setTimeout(() => startBattle("Umbros"), 10);
+    }
+}
+
+
+ if (!enemy) {
+
+  // ===== SECRET SANCTUARY (Room 3) =====
+  if (currentRoom === 3) {
+    if (spawnCooldown <= 0 && Math.random() < 0.03) {
+      const pool = ["Nightshade","Emberclaw","Voidling","Frostmaw"];
+      startBattle(pool[Math.floor(Math.random() * pool.length)], true);
+      spawnCooldown = 120 + Math.floor(Math.random() * 120);
+    } else spawnCooldown--;
+  }
+
+  // ===== FORGOTTEN SHRINE (Room 5) =====
+  else if (currentRoom === 5) {
+    if (spawnCooldown <= 0 && Math.random() < 0.035) {
+      const pool = ["Voidling","Vortox","Nightshade"];
+      const pick = pool[Math.floor(Math.random() * pool.length)];
+      startBattle(pick, pick !== "Vortox");
+      spawnCooldown = 150 + Math.floor(Math.random() * 120);
+    } else spawnCooldown--;
+  }
+
+  // ===== NORMAL ROOMS =====
+  else if (!enteredSanctuary && !rooms[currentRoom].boss && currentRoom !== 4) {
+    if (spawnCooldown <= 0 && Math.random() < 0.02) {
+      const pool = ["Sproutle","Flutterbit","Gloopion","Vortox"];
+      startBattle(pool[Math.floor(Math.random() * pool.length)]);
+      spawnCooldown = 180 + Math.floor(Math.random() * 120);
+    } else spawnCooldown--;
+  }
+}
+
+}
+/* ===== BATTLE ===== */
+function spawnBullet(){
+  const speedMultiplier = (enemy.pattern==="boss") ? 0.8 : 1;
+
+  if(enemy.pattern==="boss") {
+    if(bossAttackPattern === "boss") bullets.push({x:320,y:320,vx:(Math.random()*3-1.5)*speedMultiplier,vy:(Math.random()*2+1)*speedMultiplier});
+    else if(bossAttackPattern==="fall") bullets.push({x:220+Math.random()*200,y:320,vx:0,vy:3*speedMultiplier});
+    else if(bossAttackPattern==="wave") bullets.push({x:220,y:330+Math.random()*90,vx:3*speedMultiplier,vy:0});
+  } 
+  else {
+    if(enemy.pattern==="fall") bullets.push({x:220+Math.random()*200,y:320,vx:0,vy:3});
+    if(enemy.pattern==="wave") bullets.push({x:220,y:330+Math.random()*90,vx:3,vy:0});
+    if(enemy.pattern==="drift") bullets.push({x:220+Math.random()*200,y:320,vx:(Math.random()*2-1),vy:2});
+
+    // ===== New Secret Enemy Patterns =====
+    if(enemy.pattern==="spiral") {
+      const angle = (attackTimer % 360) * (Math.PI/180);
+      bullets.push({x:320, y:320, vx:Math.cos(angle)*2, vy:Math.sin(angle)*2});
+    }
+    if(enemy.pattern==="zigzag") {
+      const direction = (attackTimer % 40 < 20) ? 1 : -1;
+      bullets.push({x:220+Math.random()*200, y:320, vx:direction*2, vy:2});
+    }
+    if(enemy.pattern==="randomBurst") {
+      for(let i=0;i<3;i++){
+        const angle = Math.random()*Math.PI*2;
+        bullets.push({x:320, y:320, vx:Math.cos(angle)*3, vy:Math.sin(angle)*3});
+      }
+    }
+  }
+}
+
+function updateBattle() {
+  if (!enemy) return;
+
+  // ===== PLAYER TURN =====
+if (turn === "player") {
+
+    if (keys.arrowup || keys.w) heart.y -= heart.speed;
+    if (keys.arrowdown || keys.s) heart.y += heart.speed;
+    if (keys.arrowleft || keys.a) heart.x -= heart.speed;
+    if (keys.arrowright || keys.d) heart.x += heart.speed;
+
+    heart.x = Math.max(225, Math.min(395, heart.x));
+    heart.y = Math.max(325, Math.min(435, heart.y));
+
+    if (keys["1"]) { battlePlayer.choice = 0; keys["1"] = false; }
+    if (keys["2"]) { battlePlayer.choice = 1; keys["2"] = false; }
+    if (keys["3"]) { battlePlayer.choice = 2; keys["3"] = false; }
+    if (keys["4"]) { battlePlayer.choice = 3; keys["4"] = false; }
+
+    if (keys.z) {
+        keys.z = false;
+
+        // ===== FIGHT =====
+        if (battlePlayer.choice === 0) {
+            enemy.hp = Math.max(0, enemy.hp - 5);
+            dialogue = `* You strike ${enemy.name}!`;
+            turn = "enemy";
+            attackTimer = enemy.attackTime;
+            bullets = [];
+        }
+
+        // SPARE
+else if (battlePlayer.choice === 1) {
+    const talkThreshold = (enemy.name === "Thornberry") ? 7 : 3;
+
+    if (enemy.talkCount >= talkThreshold) {
+        dialogue = `* You spared ${enemy.name}!`;
+        stopAllMusic();
+
+        if (enemy.name === "Thornberry") {
+            rooms[2].defeated = true;   // ✅ unlock door
+            bossActive = false;        // ✅ prevent re-trigger
+        }
+
+        enemy = null;
+        gameState = "overworld";
+        return;
+    } else {
+        dialogue = `* You can't spare ${enemy.name} yet!`;
+    }
+}
+
+
+
+        // ===== HEAL =====
+        else if (battlePlayer.choice === 2) {
+            if (battlePlayer.heals > 0 && battlePlayer.hp < battlePlayer.maxHp) {
+                battlePlayer.hp = Math.min(battlePlayer.maxHp, battlePlayer.hp + 10);
+                battlePlayer.heals--;
+                dialogue = `* You healed yourself!`;
+                turn = "enemy";
+                attackTimer = enemy.attackTime;
+                bullets = [];
+            }
+        }
+
+        // TALK
+else if (battlePlayer.choice === 3) {
+    enemy.talkCount = (enemy.talkCount || 0) + 1;
+    const talkThreshold = (enemy.name === "Thornberry") ? 7 : 3;
+    if (enemy.talkCount >= talkThreshold) {
+        dialogue = "* It seems calmer now.";
+    } else {
+        dialogue = "* You try to talk to it...";
+    }
+    turn = "enemy";
+    attackTimer = enemy.attackTime;
+    bullets = [];
+       }
+    }
+}
+
+  // ===== ENEMY TURN =====
+  else if (turn === "enemy") {
+
+    if (enemy.name === "Thornberry") {
+  bossAttackChangeTimer--;
+  if (bossAttackChangeTimer <= 0) {
+    const patterns = ["boss", "fall", "wave"];
+    bossAttackPattern = patterns[Math.floor(Math.random() * patterns.length)];
+    bossAttackChangeTimer = 90 + Math.floor(Math.random() * 90); // faster pattern change
+  }
+}
+
+    // Move heart
+    if (keys.arrowup || keys.w) heart.y -= heart.speed;
+    if (keys.arrowdown || keys.s) heart.y += heart.speed;
+    if (keys.arrowleft || keys.a) heart.x -= heart.speed;
+    if (keys.arrowright || keys.d) heart.x += heart.speed;
+
+    heart.x = Math.max(225, Math.min(395, heart.x));
+    heart.y = Math.max(325, Math.min(435, heart.y));
+
+    // Enemy bullets
+    if (attackTimer % 20 === 0) spawnBullet();
+
+    bullets.forEach(b => {
+      b.x += b.vx;
+      b.y += b.vy;
+      if (Math.abs(b.x - heart.x) < 8 && Math.abs(b.y - heart.y) < 8) {
+        battlePlayer.hp = Math.max(0, battlePlayer.hp - enemy.dmg);
+        b.y = 999;
+      }
+    });
+
+    bullets = bullets.filter(b => b.y < 460 && b.x > 180 && b.x < 460);
+
+    attackTimer--;
+    if (attackTimer <= 0) {
+      turn = "player";
+      dialogue = getEnemyDialogue(enemy.name);
+      bullets = [];
+    }
+  }
+
+  // ===== ENEMY DEATH =====
+ if (enemy && enemy.hp <= 0) {
+    stopAllMusic();
+    bullets = [];
+
+    if (enemy.name === "Thornberry") {
+        rooms[2].defeated = true;
+        bossActive = false; // mark boss as defeated
+    }
+
+    enemy = null;
+    dialogue = "";
+    turn = "player";
+    gameState = "overworld";
+}
+
+  // ===== PLAYER DEATH =====
+  if (battlePlayer.hp <= 0) {
+    stopAllMusic();
+    gameState = "dead";
+  }
+}
+
+function drawBattle(){
+  if(!enemy) return;
+  ctx.fillStyle="black"; ctx.fillRect(0,0,640,480);
+   const ratio=enemy.hp/enemy.maxHp;
+
+if (enemy.name === "Thornberry") {
+    const floatY = Math.sin(thornberryFloat) * 10; // height of float
+    ctx.drawImage(umbrosImg, 260, 120 + floatY, 120, 120);
+}
+else if (enemy.name === "Gloopion") {
+    ctx.drawImage(gloopImg, 260, 120, 120, 120);
+}
+else if (enemy.name === "Flutterbit") {
+    ctx.drawImage(flutterImg, 260, 120, 120, 120);
+}
+else if (enemy.name === "Sproutle") {
+    ctx.drawImage(plantImg, 260, 120, 120, 120);
+}
+else if (enemy.name === "Vortox") {
+    ctx.drawImage(vortoxImg, 260, 120, 120, 120);
+}
+else if (enemy.name === "Voidling") {
+    ctx.drawImage(voidlingImg, 260, 120, 120, 120);
+
+}
+else {
+    ctx.fillStyle = enemy.color;
+    ctx.fillRect(260,120,120,120);
+  }
+  ctx.strokeStyle="white"; ctx.strokeRect(220,90,200,10);
+  ctx.fillStyle="#ff5555"; ctx.fillRect(220,90,200*ratio,10);
+  ctx.fillStyle="white"; ctx.fillText(`HP ${enemy.hp}/${enemy.maxHp}`,280,85);
+
+  ctx.strokeRect(220,320,200,120);
+  ctx.fillStyle="red"; ctx.fillRect(heart.x-5,heart.y-5,10,10);
+
+  ctx.fillStyle="white"; bullets.forEach(b=>ctx.fillRect(b.x,b.y,6,6));
+
+  ctx.fillStyle="white"; ctx.font="16px monospace";
+  ctx.fillText(dialogue,40,280);
+  ctx.fillText(`❤️ ${battlePlayer.hp}/${battlePlayer.maxHp}`,450,50);
+  ctx.fillText(`Heals: ${battlePlayer.heals}`,450,70);
+
+const opts = ["FIGHT", "SPARE", "HEAL", "TALK"];
+
+// Determine how many talks are needed to spare
+const talkThreshold = (enemy.name === "Thornberry") ? 7 : 3;
+
+opts.forEach((o, i) => {
+  // Grey out SPARE until you’ve talked enough
+  if (i === 1 && enemy.talkCount < talkThreshold) {
+    ctx.fillStyle = "gray";
+    ctx.globalAlpha = 0.5;
+  } else {
+    ctx.fillStyle = (battlePlayer.choice === i ? "yellow" : "white");
+    ctx.globalAlpha = 1;
+  }
+  ctx.fillText(o, 40, 350 + i * 30);
+  ctx.globalAlpha = 1;
+});
+}
+
+/* ===== GAME LOOP ===== */
+function loop(){
+if (enemy && enemy.name === "Thornberry") {
+    thornberryFloat += 0.05; // Thornberry floats only during battle
+}
+
+
+  if(gameState==="menu"){ drawMenu(); updateMenu(); }
+  if(gameState==="overworld"){ drawOverworld(); updateOverworld(); }
+  if(gameState==="battle"){ drawBattle(); updateBattle(); }
+  if(gameState==="dead"){
+    ctx.fillStyle="black"; ctx.fillRect(0,0,640,480);
+    ctx.fillStyle="red"; ctx.font="40px monospace"; ctx.fillText("YOU DIED",220,240);
+  }
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
+message.txt
