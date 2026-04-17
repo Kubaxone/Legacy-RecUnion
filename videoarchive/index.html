@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Old Rec Room Archive</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            background: black;
+            color: white;
+            font-family: Courier New;
+            text-align: center;
+            margin: 0;
+            padding: 0 10px 40px;
+        }
+
+        h1 {
+            font-size: clamp(1.4rem, 5vw, 2.2rem);
+            margin: 30px 0 5px;
+            letter-spacing: 2px;
+        }
+
+        #subtitle {
+            color: #888;
+            font-size: 0.75rem;
+            margin-bottom: 20px;
+            letter-spacing: 1px;
+        }
+
+        #videos {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(min(100%, 480px), 1fr));
+            gap: 20px;
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 10px;
+        }
+
+        .video-card {
+            border: 2px solid gray;
+            background: #111;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .video-card video {
+            width: 100%;
+            display: block;
+            background: #000;
+        }
+
+        .video-label {
+            padding: 6px 10px;
+            font-size: 0.7rem;
+            color: #aaa;
+            text-align: left;
+            border-top: 1px solid #333;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        #loader {
+            color: #666;
+            margin-top: 60px;
+            font-size: 0.85rem;
+            letter-spacing: 2px;
+        }
+
+        #loader::after {
+            content: '';
+            animation: dots 1.2s steps(4, end) infinite;
+        }
+
+        @keyframes dots {
+            0%   { content: ''; }
+            25%  { content: '.'; }
+            50%  { content: '..'; }
+            75%  { content: '...'; }
+        }
+    </style>
+</head>
+<body>
+<h1>Rec Room Archive</h1>
+<div id="subtitle">kubaxone / recunion</div>
+<div id="loader">LOADING</div>
+<div id="videos"></div>
+<script>
+const username = "Kubaxone";
+const repo = "RecUnion";
+const folder = "videoarchive";
+
+fetch(`https://api.github.com/repos/${username}/${repo}/contents/${folder}`)
+  .then(response => response.json())
+  .then(data => {
+    document.getElementById("loader").style.display = "none";
+    const container = document.getElementById("videos");
+    data.forEach(file => {
+      if (file.name.toLowerCase().endsWith(".mp4")) {
+        const card = document.createElement("div");
+        card.className = "video-card";
+
+        const video = document.createElement("video");
+        video.src = file.download_url;
+        video.controls = true;
+        video.preload = "metadata";
+        video.setAttribute("playsinline", "");
+
+        const label = document.createElement("div");
+        label.className = "video-label";
+        label.textContent = file.name.replace(/\.mp4$/i, "");
+
+        card.appendChild(video);
+        card.appendChild(label);
+        container.appendChild(card);
+      }
+    });
+  })
+  .catch(() => {
+    document.getElementById("loader").textContent = "FAILED TO LOAD";
+  });
+</script>
+</body>
+</html>
